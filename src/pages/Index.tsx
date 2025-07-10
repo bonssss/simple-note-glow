@@ -6,13 +6,14 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import NoteEditor from '@/components/NoteEditor';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Note {
   id: string;
   title: string;
   content: string;
-  createdAt: Date;
-  updatedAt: Date;
+  created_at: string;
+  updated_at: string;
 }
 
 const Index = () => {
@@ -22,23 +23,29 @@ const Index = () => {
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const { toast } = useToast();
 
-  // Load notes from localStorage on component mount
+  // Load notes from Supabase on component mount
   useEffect(() => {
-    const savedNotes = localStorage.getItem('notebook-notes');
-    if (savedNotes) {
-      const parsedNotes = JSON.parse(savedNotes).map((note: any) => ({
-        ...note,
-        createdAt: new Date(note.createdAt),
-        updatedAt: new Date(note.updatedAt),
-      }));
-      setNotes(parsedNotes);
-    }
+    fetchNotes();
   }, []);
 
-  // Save notes to localStorage whenever notes change
-  useEffect(() => {
-    localStorage.setItem('notebook-notes', JSON.stringify(notes));
-  }, [notes]);
+  const fetchNotes = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('notes')
+        .select('*')
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+      setNotes(data || []);
+    } catch (error) {
+      console.error('Error fetching notes:', error);
+      toast({
+        title: 'Error loading notes',
+        description: 'Failed to load your notes. Please try again.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   const filteredNotes = notes.filter(
     note =>
@@ -56,46 +63,73 @@ const Index = () => {
     setIsEditing(true);
   };
 
-  const handleSaveNote = (title: string, content: string) => {
-    if (editingNote) {
-      // Update existing note
-      setNotes(prevNotes =>
-        prevNotes.map(note =>
-          note.id === editingNote.id
-            ? { ...note, title, content, updatedAt: new Date() }
-            : note
-        )
-      );
+  const handleSaveNote = async (title: string, content: string) => {
+    try {
+      if (editingNote) {
+        // Update existing note
+        const { error } = await supabase
+          .from('notes')
+          .update({ title, content })
+          .eq('id', editingNote.id);
+
+        if (error) throw error;
+
+        toast({
+          title: 'Note updated!',
+          description: 'Your note has been successfully updated.',
+        });
+      } else {
+        // Create new note
+        const { error } = await supabase
+          .from('notes')
+          .insert([{ title, content }]);
+
+        if (error) throw error;
+
+        toast({
+          title: 'Note created!',
+          description: 'Your new note has been saved.',
+        });
+      }
+      
+      // Refresh notes from database
+      await fetchNotes();
+      setIsEditing(false);
+      setEditingNote(null);
+    } catch (error) {
+      console.error('Error saving note:', error);
       toast({
-        title: 'Note updated!',
-        description: 'Your note has been successfully updated.',
-      });
-    } else {
-      // Create new note
-      const newNote: Note = {
-        id: Date.now().toString(),
-        title,
-        content,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      setNotes(prevNotes => [newNote, ...prevNotes]);
-      toast({
-        title: 'Note created!',
-        description: 'Your new note has been saved.',
+        title: 'Error saving note',
+        description: 'Failed to save your note. Please try again.',
+        variant: 'destructive',
       });
     }
-    setIsEditing(false);
-    setEditingNote(null);
   };
 
-  const handleDeleteNote = (id: string) => {
-    setNotes(prevNotes => prevNotes.filter(note => note.id !== id));
-    toast({
-      title: 'Note deleted',
-      description: 'Your note has been permanently deleted.',
-      variant: 'destructive',
-    });
+  const handleDeleteNote = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('notes')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      // Refresh notes from database
+      await fetchNotes();
+      toast({
+        title: 'Note deleted',
+        description: 'Your note has been permanently deleted.',
+        variant: 'destructive',
+      });
+    } catch (error) {
+      console.error('Error deleting note:', error);
+      toast({
+        title: 'Error deleting note',
+        description: 'Failed to delete your note. Please try again.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleCancelEdit = () => {
@@ -103,14 +137,14 @@ const Index = () => {
     setEditingNote(null);
   };
 
-  const formatDate = (date: Date) => {
+  const formatDate = (dateString: string) => {
     return new Intl.DateTimeFormat('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
-    }).format(date);
+    }).format(new Date(dateString));
   };
 
   const truncateText = (text: string, maxLength: number) => {
@@ -225,7 +259,7 @@ const Index = () => {
                   </p>
                   
                   <div className="text-xs text-gray-400">
-                    {formatDate(note.updatedAt)}
+                    {formatDate(note.updated_at)}
                   </div>
                 </CardContent>
               </Card>
