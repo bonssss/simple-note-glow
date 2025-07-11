@@ -53,9 +53,14 @@ const Auth = () => {
       });
     } else {
       toast({
-        title: 'Check your email',
-        description: 'We sent you a confirmation link to complete your registration.',
+        title: 'Registration successful!',
+        description: 'Please check your email to confirm your account, then sign in below.',
       });
+      // Automatically switch to login form
+      setIsSignUp(false);
+      // Clear the form
+      setDisplayName('');
+      setPassword('');
     }
     setLoading(false);
   };
